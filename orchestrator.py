@@ -28,10 +28,12 @@ def run_mission(mission_id: str) -> None:
         if raw.empty or not len(raw.columns): raise ValueError("Invalid CSV: file has no data rows or columns.")
         cleaned, log = clean_dataframe(raw)
         mission.cleaned_summary = {"original_rows": int(len(raw)), "cleaned_rows": int(len(cleaned)), "columns": cleaned.columns.tolist(), "cleaning_log": log}
-        _event(db, mission, "data_engineer", "complete", "Data cleaning complete.")
+        dropped = int(len(raw)) - int(len(cleaned))
+        summary_msg = f"Cleaned {len(raw)} rows to {len(cleaned)} usable rows ({dropped} duplicate(s) removed) across {len(log)} adjustment(s)."
+        _event(db, mission, "data_engineer", "complete", summary_msg)
         mission.stage = "eda_agent"; db.commit(); _event(db, mission, "eda_agent", "running", "Computing descriptive analysis.")
         stats = analyze_dataframe(cleaned)
-        mission.charts_data = {"top_categories": stats["top_categories"], "correlations": stats["correlations"], "trend": stats["trend"]}
+        mission.charts_data = {"top_categories": stats["top_categories"], "correlations": stats["correlations"], "trend": stats["trend"], "distribution": stats.get("distribution", {})}
         _event(db, mission, "eda_agent", "complete", "Exploratory analysis complete.")
         mission.stage = "insight_agent"; db.commit(); _event(db, mission, "insight_agent", "running", "Generating evidence-grounded insights.")
         insights = generate_insights(stats, mission.business_goal); _event(db, mission, "insight_agent", "complete", f"Generated {len(insights)} candidate insights.")
