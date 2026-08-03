@@ -18,8 +18,16 @@ def analyze_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
     categorical = df.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
     summary = {c: {k: _value(v) for k, v in values.items()} for c, values in df.describe(include="all").to_dict().items()} if not df.empty else {}
 
-    # Skip ID-like columns (near-unique per row, e.g. CustomerID) - charting these is meaningless
-    # since every value_count would be 1. Also skip if there's effectively one row per category.
+    # Numeric identifier columns (e.g. CustomerKey, ProductKey, OrderID) are not real metrics -
+    # picking them as "the interesting trend" or correlating against them produces meaningless charts.
+    id_tokens = ("key", "_id", "id_")
+    metric_candidates = [
+        c for c in numeric
+        if not (c.lower().endswith("id") or c.lower() == "id" or any(t in c.lower() for t in id_tokens))
+    ] or numeric  # fall back to all numeric columns if everything looks like an ID
+
+    # Skip ID-like categorical columns (near-unique per row, e.g. CustomerID) - charting these is
+    # meaningless since every value_count would be 1. Also skip if there's effectively one row per category.
     row_count = len(df)
     chartable_categorical = [
         c for c in categorical
@@ -27,12 +35,12 @@ def analyze_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
     ]
     categories = {c: {str(k): int(v) for k, v in df[c].value_counts(dropna=False).head(5).items()} for c in chartable_categorical}
 
-    correlations = {a: {b: _value(v) for b, v in row.items()} for a, row in df[numeric].corr().to_dict().items()} if len(numeric) >= 2 else {}
+    correlations = {a: {b: _value(v) for b, v in row.items()} for a, row in df[metric_candidates].corr().to_dict().items()} if len(metric_candidates) >= 2 else {}
 
     trend: Dict[str, Any] = {}
     dates = df.select_dtypes(include=["datetime", "datetimetz"]).columns.tolist()
-    if dates and numeric:
-        date_col, metric = dates[0], max(numeric, key=lambda c: _cv(df, c))
+    if dates and metric_candidates:
+        date_col, metric = dates[0], max(metric_candidates, key=lambda c: _cv(df, c))
         working = df[[date_col, metric]].dropna()
         series = working.groupby(working[date_col].dt.to_period("M"))[metric].mean()
         trend = {"date_column": date_col, "metric": metric, "points": [{"period": str(k), "value": _value(v)} for k, v in series.items()]}
@@ -40,8 +48,8 @@ def analyze_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
     # Fallback when there's no date column to chart a trend against: bucket the most
     # variable numeric column into a histogram so the "trend" slot is never just blank.
     distribution: Dict[str, Any] = {}
-    if not trend and numeric:
-        metric = max(numeric, key=lambda c: _cv(df, c))
+    if not trend and metric_candidates:
+        metric = max(metric_candidates, key=lambda c: _cv(df, c))
         series = df[metric].dropna()
         if len(series) and series.nunique() > 1:
             bins = pd.cut(series, bins=min(8, series.nunique()))
