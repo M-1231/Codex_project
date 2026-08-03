@@ -35,7 +35,16 @@ def clean_dataframe(dataframe: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
             log.append(f"Coerced '{column}' to numeric values.")
         elif any(token in column.lower() for token in ("date", "time", "month", "year", "day")):
             parsed = pd.to_datetime(df[column], errors="coerce")
+            # Auto-inference can fail on ambiguous formats (e.g. "01-Mar-17"); try explicit
+            # common formats before giving up on what is clearly meant to be a date column.
+            if parsed.notna().mean() < 0.70:
+                for fmt in ("%d-%b-%y", "%d-%b-%Y", "%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d", "%m-%d-%Y"):
+                    candidate = pd.to_datetime(df[column], format=fmt, errors="coerce")
+                    if candidate.notna().mean() > parsed.notna().mean():
+                        parsed = candidate
             if parsed.notna().mean() >= 0.70:
                 df[column] = parsed
                 log.append(f"Coerced '{column}' to dates.")
+            else:
+                log.append(f"Left '{column}' as text - fewer than 70% of values matched a recognizable date format.")
     return df, log
