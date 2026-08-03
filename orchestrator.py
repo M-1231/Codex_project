@@ -34,7 +34,7 @@ def run_mission(mission_id: str) -> None:
         mission.charts_data = {"top_categories": stats["top_categories"], "correlations": stats["correlations"], "trend": stats["trend"]}
         _event(db, mission, "eda_agent", "complete", "Exploratory analysis complete.")
         mission.stage = "insight_agent"; db.commit(); _event(db, mission, "insight_agent", "running", "Generating evidence-grounded insights.")
-        insights = generate_insights(stats); _event(db, mission, "insight_agent", "complete", f"Generated {len(insights)} candidate insights.")
+        insights = generate_insights(stats, mission.business_goal); _event(db, mission, "insight_agent", "complete", f"Generated {len(insights)} candidate insights.")
         mission.stage = "qa_agent"; db.commit(); _event(db, mission, "qa_agent", "running", "Verifying insight evidence.")
         checked = verify_insights(stats, insights); mission.approved_insights = checked["approved"]; mission.rejected_insights = checked["rejected"]
         _event(db, mission, "qa_agent", "complete", f"Approved {len(checked['approved'])} insights."); mission.stage = "complete"; db.commit()
